@@ -1,4 +1,4 @@
-# TrackCP: Competitive Programming Tracker (v0.2.0)
+# TrackCP: DSA/CP Tracker
 
 A Chrome Extension to track your competitive programming progress on GitHub.
 Supports **LeetCode**, **Codeforces**, and **CodeChef**.
