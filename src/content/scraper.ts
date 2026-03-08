@@ -33,16 +33,32 @@ const getCodeFromPage = (): Promise<string> => {
              const models = window.monaco.editor.getModels();
              if (models.length > 0) code = models[models.length - 1].getValue(); // Get last model usually active
           } 
+          
+          // Leetcode Monaco DOM Fallback (if API inaccessible)
+          if (!code) {
+             const lines = Array.from(document.querySelectorAll('.view-line'));
+             if (lines.length > 0) {
+                 code = lines.map(line => line.textContent || "").join('\\n');
+             }
+          }
+          
+          // CodeMirror 6 (Modern sites fallback)
+          if (!code && document.querySelector('.cm-content')) {
+              code = document.querySelector('.cm-content').innerText || "";
+          }
+
           // Ace (CodeChef/HackerEarth)
           if (!code && window.ace) {
              const editor = window.ace.edit(document.querySelector('.ace_editor'));
              if (editor) code = editor.getValue();
           } 
-          // CodeMirror (Old Codeforces / Others)
+
+          // CodeMirror 5 (Old Codeforces / Others)
           if (!code && document.querySelector('.CodeMirror')) {
-             const cm = (document.querySelector('.CodeMirror') as any).CodeMirror;
+             const cm = (document.querySelector('.CodeMirror')).CodeMirror;
              if (cm) code = cm.getValue();
           }
+
           // Textarea fallback (Codeforces)
           if (!code) {
              const ta = document.getElementById('sourceCodeTextarea') 
@@ -88,16 +104,23 @@ const waitForElement = (selector: string, timeout = 2000): Promise<Element | nul
 
 const getLeetCodeData = async (): Promise<Partial<ProblemMetadata>> => {
   const url = window.location.href;
-  // Wait for title
-  await waitForElement('div[data-cy="question-title"], .text-title-large');
   
-  const titleParts = document.title.split('-');
-  const problemName = titleParts[0].trim();
+  // Wait for title or a robust fallback
+  await waitForElement('div[data-cy="question-title"], div[class*="text-title-large"]', 3000);
+  
+  let problemName = document.title.split('-')[0].trim();
+  
+  // Try to get title from DOM if document.title is incomplete
+  const titleEl = document.querySelector('div[data-cy="question-title"]') || document.querySelector('div[class*="text-title-large"]');
+  if (titleEl && titleEl.textContent) {
+      // "1. Two Sum" -> "Two Sum" or keep the number. Keep full for accuracy.
+      problemName = titleEl.textContent.trim();
+  }
   
   let difficulty: 'Easy' | 'Medium' | 'Hard' | null = null;
   
-  // Try finding difficulty
-  const diffSelectors = ['.text-green-500', '.text-yellow-500', '.text-red-500', '.text-olive', '.text-pink'];
+  // Try finding difficulty via substring class matches
+  const diffSelectors = ['div[class*="text-difficulty-"]', '.text-green-500', '.text-yellow-500', '.text-red-500', '.text-olive', '.text-pink'];
   for (const sel of diffSelectors) {
     const el = document.querySelector(sel);
     if (el) {
@@ -108,11 +131,12 @@ const getLeetCodeData = async (): Promise<Partial<ProblemMetadata>> => {
     }
   }
 
-  // Fallback: Check text content of specific containers
+  // Fallback difficulty
   if (!difficulty) {
-    const bodyText = document.body.innerText;
-    if (bodyText.includes('Easy')) difficulty = 'Easy'; // Too loose but fallback
-    // A better fallback is looking for specific difficulty div classes that might change but usually contain the word
+    const textContent = document.body.innerText;
+    if (/\bEasy\b/.test(textContent)) difficulty = 'Easy';
+    else if (/\bMedium\b/.test(textContent)) difficulty = 'Medium';
+    else if (/\bHard\b/.test(textContent)) difficulty = 'Hard';
   }
 
   // Extract Code
@@ -197,8 +221,9 @@ const scrape = async () => {
     if (hostname.includes('leetcode')) {
         // LeetCode: Look for "Accepted" in specific submission containers
         const successEl = document.querySelector('[data-cy="submission-result-success"]');
-        const greenText = document.querySelector('.text-green-500');
-        if (successEl || (greenText && greenText.textContent?.includes('Accepted'))) {
+        const textGreen = document.querySelector('.text-green-s, .text-green-500');
+        
+        if (successEl || (textGreen && textGreen.textContent?.includes('Accepted'))) {
             isAccepted = true;
         }
     } else if (hostname.includes('codeforces')) {
